@@ -7,12 +7,15 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct ScreenshotApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            User.self,
+            Screenshot.self,
+            ScreenshotCategory.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -26,6 +29,9 @@ struct ScreenshotApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    NotificationService.shared.requestPermission()
+                }
         }
         .modelContainer(sharedModelContainer)
     }
