@@ -70,7 +70,8 @@ final class Screenshot {
     // Computed property for aspect ratio
     var aspectRatio: Double {
         guard height > 0 else { return 0 }
-        return Double(width) / Double(height)
+        let ratio = Double(width) / Double(height)
+        return ratio.isNaN || ratio.isInfinite ? 1.0 : ratio
     }
     
     // Method to update modification date

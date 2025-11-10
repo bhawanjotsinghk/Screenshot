@@ -66,7 +66,12 @@ class AIImageAnalyzer: ObservableObject {
             let description = descriptions.joined(separator: ", ")
             
             // Calculate average confidence
-            let avgConfidence = topObservations.map { Double($0.confidence) }.reduce(0, +) / Double(topObservations.count)
+            let avgConfidence: Double
+            if topObservations.count > 0 {
+                avgConfidence = topObservations.map { Double($0.confidence) }.reduce(0, +) / Double(topObservations.count)
+            } else {
+                avgConfidence = 0.0
+            }
             
             // Determine suggested category based on classifications
             let suggestedCategory = self.determineCategory(from: Array(topObservations))

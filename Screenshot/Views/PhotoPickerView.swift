@@ -224,7 +224,11 @@ struct PhotoPickerView: View {
         for asset in foundScreenshots {
             await importScreenshot(asset: asset)
             processedCount += 1
-            autoImportProgress = Double(processedCount) / Double(totalCount)
+            if totalCount > 0 {
+                autoImportProgress = Double(processedCount) / Double(totalCount)
+            } else {
+                autoImportProgress = 1.0
+            }
         }
         
         isProcessing = false

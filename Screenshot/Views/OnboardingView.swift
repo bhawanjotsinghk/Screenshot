@@ -58,7 +58,10 @@ struct OnboardingView: View {
                         currentStep: $currentStep,
                         totalSteps: totalSteps,
                         showingOnboarding: $showingOnboarding,
-                        isOnboardingComplete: $isOnboardingComplete
+                        isOnboardingComplete: $isOnboardingComplete,
+                        userName: userName,
+                        userEmail: userEmail,
+                        modelContext: modelContext
                     )
                 }
             }
@@ -308,6 +311,9 @@ struct ProfileStepView: View {
 
 // MARK: - Step 3: Permissions
 struct PermissionsStepView: View {
+    @State private var hasPhotoPermission = false
+    @State private var showingPermissionAlert = false
+    
     var body: some View {
         VStack(spacing: 30) {
             Spacer()
@@ -337,20 +343,25 @@ struct PermissionsStepView: View {
             
             // Permission cards
             VStack(spacing: 12) {
-                PermissionCard(
-                    icon: "iphone",
-                    title: "Photos Access",
-                    subtitle: "Required to organize screenshots",
-                    isRequired: true,
-                    color: .green
-                )
+                Button(action: requestPhotoPermission) {
+                    PermissionCard(
+                        icon: "iphone",
+                        title: "Photos Access",
+                        subtitle: hasPhotoPermission ? "Access granted" : "Required to organize screenshots",
+                        isRequired: true,
+                        color: hasPhotoPermission ? .green : .orange,
+                        isGranted: hasPhotoPermission
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
                 
                 PermissionCard(
                     icon: "bell",
                     title: "Notifications",
                     subtitle: "Get reminders about new screenshots",
                     isRequired: false,
-                    color: .blue
+                    color: .blue,
+                    isGranted: false
                 )
             }
             .padding(.horizontal, 20)
@@ -381,6 +392,35 @@ struct PermissionsStepView: View {
             
             Spacer()
         }
+        .onAppear {
+            checkPhotoPermissionStatus()
+        }
+        .alert("Photo Library Access Required", isPresented: $showingPermissionAlert) {
+            Button("Settings") {
+                if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(settingsUrl)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Please allow access to your photo library in Settings to automatically find and organize your screenshots.")
+        }
+    }
+    
+    private func checkPhotoPermissionStatus() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        hasPhotoPermission = status == .authorized || status == .limited
+    }
+    
+    private func requestPhotoPermission() {
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+            DispatchQueue.main.async {
+                hasPhotoPermission = status == .authorized || status == .limited
+                if !hasPhotoPermission && status == .denied {
+                    showingPermissionAlert = true
+                }
+            }
+        }
     }
 }
 
@@ -390,6 +430,7 @@ struct PermissionCard: View {
     let subtitle: String
     let isRequired: Bool
     let color: Color
+    let isGranted: Bool
     
     var body: some View {
         HStack(spacing: 16) {
@@ -410,13 +451,28 @@ struct PermissionCard: View {
             
             Spacer()
             
-            Text(isRequired ? "Required" : "Optional")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(isRequired ? .green : .blue)
+            if isGranted {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 14))
+                    Text("Granted")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.green)
+                }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background((isRequired ? Color.green : Color.blue).opacity(0.1))
+                .background(Color.green.opacity(0.1))
                 .cornerRadius(8)
+            } else {
+                Text(isRequired ? "Required" : "Optional")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isRequired ? .orange : .blue)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((isRequired ? Color.orange : Color.blue).opacity(0.1))
+                    .cornerRadius(8)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -769,6 +825,9 @@ struct NavigationButtonsView: View {
     let totalSteps: Int
     @Binding var showingOnboarding: Bool
     @Binding var isOnboardingComplete: Bool
+    let userName: String
+    let userEmail: String
+    let modelContext: ModelContext
     
     var body: some View {
         HStack {
@@ -801,7 +860,7 @@ struct NavigationButtonsView: View {
             
             Button(action: {
                 if currentStep == totalSteps - 1 {
-                    isOnboardingComplete = true
+                    completeOnboarding()
                 } else {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         currentStep += 1
@@ -823,21 +882,33 @@ struct NavigationButtonsView: View {
                 .background(Color.primary)
                 .cornerRadius(8)
             }
-            
-            // Help button
-            Button(action: {
-                // Help action
-            }) {
-                Image(systemName: "questionmark")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary)
-                    .clipShape(Circle())
-            }
+            .disabled(currentStep == totalSteps - 1 && (userName.isEmpty || userEmail.isEmpty))
+            .opacity(currentStep == totalSteps - 1 && (userName.isEmpty || userEmail.isEmpty) ? 0.6 : 1.0)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
+    }
+    
+    private func completeOnboarding() {
+        // Validate user input
+        guard !userName.isEmpty && !userEmail.isEmpty else {
+            return
+        }
+        
+        // Create user account
+        let user = User(name: userName, email: userEmail)
+        user.isOnboardingComplete = true
+        
+        // Save to model context
+        modelContext.insert(user)
+        
+        do {
+            try modelContext.save()
+            // Set onboarding complete flag
+            isOnboardingComplete = true
+        } catch {
+            print("Failed to save user: \(error)")
+        }
     }
 }
 

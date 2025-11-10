@@ -6,10 +6,19 @@
 //
 
 import SwiftUI
+import SwiftData
+import UIKit
 
 struct ScreenshotCardView: View {
     let screenshot: Screenshot
+    @Environment(\.modelContext) private var modelContext
     @State private var showingImage = false
+    @State private var showingDetailView = false
+    @State private var showingDeleteAlert = false
+    
+    private var screenshotManager: ScreenshotManager {
+        ScreenshotManager(modelContext: modelContext)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -43,9 +52,37 @@ struct ScreenshotCardView: View {
                 VStack {
                     HStack {
                         Spacer()
+                        Menu {
+                            Button(action: {
+                                showingDetailView = true
+                            }) {
+                                Label("View Details", systemImage: "info.circle")
+                            }
+                            
+                            Button(action: {
+                                screenshot.toggleFavorite()
+                                screenshotManager.updateScreenshot(screenshot)
+                            }) {
+                                Label(
+                                    screenshot.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                                    systemImage: screenshot.isFavorite ? "heart.slash" : "heart"
+                                )
+                            }
+                            
                         Button(action: {
-                            // Menu action
+                                shareScreenshot()
+                            }) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                            
+                            Divider()
+                            
+                            Button(role: .destructive, action: {
+                                showingDeleteAlert = true
                         }) {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        } label: {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.white)
@@ -114,7 +151,51 @@ struct ScreenshotCardView: View {
         .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
         .fullScreenCover(isPresented: $showingImage) {
             if let image = screenshot.image {
-                ImageViewerView(image: image, screenshot: screenshot)
+                ImageViewerView(
+                    image: image,
+                    screenshot: screenshot,
+                    screenshotManager: ScreenshotManager(modelContext: modelContext)
+                )
+            }
+        }
+        .sheet(isPresented: $showingDetailView) {
+            ScreenshotDetailView(
+                screenshot: screenshot,
+                screenshotManager: ScreenshotManager(modelContext: modelContext)
+            )
+        }
+        .alert("Delete Screenshot", isPresented: $showingDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                screenshotManager.deleteScreenshot(screenshot)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to delete this screenshot? This action cannot be undone.")
+        }
+    }
+    
+    private func shareScreenshot() {
+        guard let image = screenshot.image else { return }
+        
+        DispatchQueue.main.async {
+            let activityVC = UIActivityViewController(
+                activityItems: [image],
+                applicationActivities: nil
+            )
+            
+            // For iPad support
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first,
+               let rootViewController = window.rootViewController {
+                
+                // Configure popover for iPad
+                if let popover = activityVC.popoverPresentationController {
+                    popover.sourceView = window
+                    popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+                
+                rootViewController.present(activityVC, animated: true)
             }
         }
     }
@@ -139,16 +220,31 @@ struct ScreenshotCardView: View {
 struct ImageViewerView: View {
     let image: UIImage
     let screenshot: Screenshot
+    @ObservedObject var screenshotManager: ScreenshotManager
     @Environment(\.dismiss) private var dismiss
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    @State private var newTag = ""
+    @State private var notes: String
+    @State private var isEditingNotes = false
+    @FocusState private var isNotesFocused: Bool
+    
+    init(image: UIImage, screenshot: Screenshot, screenshotManager: ScreenshotManager) {
+        self.image = image
+        self.screenshot = screenshot
+        self.screenshotManager = screenshotManager
+        self._notes = State(initialValue: screenshot.notes ?? "")
+    }
     
     var body: some View {
         NavigationView {
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Screenshot Image Section
             ZStack {
-                Color.black.ignoresSafeArea()
+                        Color.black
                 
                 Image(uiImage: image)
                     .resizable()
@@ -158,9 +254,15 @@ struct ImageViewerView: View {
                     .gesture(
                         MagnificationGesture()
                             .onChanged { value in
+                                guard lastScale != 0 else { return }
                                 let delta = value / lastScale
                                 lastScale = value
                                 scale *= delta
+                                
+                                // Prevent NaN values
+                                if scale.isNaN || scale.isInfinite {
+                                    scale = 1.0
+                                }
                             }
                             .onEnded { _ in
                                 lastScale = 1.0
@@ -175,9 +277,13 @@ struct ImageViewerView: View {
                     .gesture(
                         DragGesture()
                             .onChanged { value in
+                                let newWidth = lastOffset.width + value.translation.width
+                                let newHeight = lastOffset.height + value.translation.height
+                                
+                                // Prevent NaN values in offset
                                 offset = CGSize(
-                                    width: lastOffset.width + value.translation.width,
-                                    height: lastOffset.height + value.translation.height
+                                    width: newWidth.isNaN ? 0 : newWidth,
+                                    height: newHeight.isNaN ? 0 : newHeight
                                 )
                             }
                             .onEnded { _ in
@@ -185,10 +291,191 @@ struct ImageViewerView: View {
                             }
                     )
             }
+                    .frame(height: UIScreen.main.bounds.height * 0.6)
+                    .frame(maxWidth: .infinity)
+                    
+                    // Tags and Notes Section
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Tags Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "tag.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 20))
+                                Text("Tags")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Spacer()
+                            }
+                            
+                            if screenshot.tags.isEmpty {
+                                Text("No tags added yet")
+                                    .foregroundColor(.secondary)
+                                    .font(.subheadline)
+                            } else {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 12)], spacing: 12) {
+                                    ForEach(screenshot.tags, id: \.self) { tag in
+                                        HStack(spacing: 8) {
+                                            Text(tag)
+                                                .font(.system(size: 15, weight: .medium))
+                                            
+                                            Button(action: {
+                                                screenshot.removeTag(tag)
+                                                screenshotManager.updateScreenshot(screenshot)
+                                            }) {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                        .background(Color(.systemBlue).opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                            
+                            // Add Tag Input
+                            HStack(spacing: 12) {
+                                TextField("Add a tag...", text: $newTag)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .onSubmit {
+                                        addTag()
+                                    }
+                                
+                                Button(action: {
+                                    addTag()
+                                }) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 28))
+                                        .foregroundColor(.blue)
+                                }
+                                .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
+                        
+                        Divider()
+                            .padding(.horizontal, 20)
+                        
+                        // Notes Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "note.text")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 20))
+                                Text("Notes")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Spacer()
+                                
+                                if !notes.isEmpty {
+                                    Button(action: {
+                                        isEditingNotes.toggle()
+                                        if !isEditingNotes {
+                                            saveNotes()
+                                        } else {
+                                            isNotesFocused = true
+                                        }
+                                    }) {
+                                        Text(isEditingNotes ? "Save" : "Edit")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+                            
+                            if isEditingNotes || notes.isEmpty {
+                                TextEditor(text: $notes)
+                                    .frame(minHeight: 150)
+                                    .padding(8)
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                                    .focused($isNotesFocused)
+                                    .overlay(
+                                        Group {
+                                            if notes.isEmpty && !isNotesFocused {
+                                                VStack {
+                                                    HStack {
+                                                        Text("Add notes about this screenshot...")
+                                                            .foregroundColor(.secondary)
+                                                            .padding(.top, 8)
+                                                            .padding(.leading, 5)
+                                                        Spacer()
+                                                    }
+                                                    Spacer()
+                                                }
+                                            }
+                                        }
+                                    )
+                                
+                                if !notes.isEmpty {
+                                    HStack {
+                                        Spacer()
+                                        Text("\(notes.count) characters")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                
+                                if isEditingNotes {
+                                    HStack {
+                                        Button("Cancel") {
+                                            notes = screenshot.notes ?? ""
+                                            isEditingNotes = false
+                                        }
+                                        .foregroundColor(.secondary)
+                                        
+                                        Spacer()
+                                        
+                                        Button("Save") {
+                                            saveNotes()
+                                        }
+                                        .foregroundColor(.blue)
+                                        .fontWeight(.semibold)
+                                    }
+                                    .padding(.top, 8)
+                                }
+                            } else {
+                                if let notesText = screenshot.notes, !notesText.isEmpty {
+                                    Text(notesText)
+                                        .font(.body)
+                                        .padding(.vertical, 8)
+                                } else {
+                                    Text("No notes added yet")
+                                        .foregroundColor(.secondary)
+                                        .font(.subheadline)
+                                }
+                                
+                                Button(action: {
+                                    isEditingNotes = true
+                                    isNotesFocused = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "pencil")
+                                        Text("Add Notes")
+                                    }
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.blue)
+                                }
+                                .padding(.top, 8)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 40)
+                    }
+                    .background(Color(.systemBackground))
+                }
+            }
+            .background(Color.black)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {
+                        if isEditingNotes {
+                            saveNotes()
+                        }
                         dismiss()
                     }
                     .foregroundColor(.white)
@@ -197,6 +484,7 @@ struct ImageViewerView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         screenshot.toggleFavorite()
+                        screenshotManager.updateScreenshot(screenshot)
                     }) {
                         Image(systemName: screenshot.isFavorite ? "heart.fill" : "heart")
                             .foregroundColor(screenshot.isFavorite ? .red : .white)
@@ -204,6 +492,23 @@ struct ImageViewerView: View {
                 }
             }
         }
+    }
+    
+    private func addTag() {
+        let trimmedTag = newTag.trimmingCharacters(in: .whitespaces)
+        if !trimmedTag.isEmpty && !screenshot.tags.contains(trimmedTag) {
+            screenshot.addTag(trimmedTag)
+            screenshotManager.updateScreenshot(screenshot)
+            newTag = ""
+        }
+    }
+    
+    private func saveNotes() {
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        screenshot.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+        screenshotManager.updateScreenshot(screenshot)
+        isEditingNotes = false
+        isNotesFocused = false
     }
 }
 

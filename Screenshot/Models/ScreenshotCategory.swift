@@ -64,11 +64,11 @@ final class ScreenshotCategory {
 // Predefined categories
 extension ScreenshotCategory {
     static let predefinedCategories: [ScreenshotCategory] = [
-        ScreenshotCategory(name: "Social Media", color: "#FF6B6B", icon: "sparkles", isDefault: true, sortOrder: 1),
-        ScreenshotCategory(name: "Gaming", color: "#9B59B6", icon: "bolt.fill", isDefault: true, sortOrder: 2),
-        ScreenshotCategory(name: "Messaging", color: "#3498DB", icon: "brain", isDefault: true, sortOrder: 3),
-        ScreenshotCategory(name: "Productivity", color: "#2ECC71", icon: "calendar", isDefault: true, sortOrder: 4),
-        ScreenshotCategory(name: "Photos", color: "#45B7D1", icon: "camera", isDefault: true, sortOrder: 5),
+        ScreenshotCategory(name: "Social Media", color: "#FF69B4", icon: "message.fill", isDefault: true, sortOrder: 1),
+        ScreenshotCategory(name: "Messages", color: "#3498DB", icon: "message.fill", isDefault: true, sortOrder: 2),
+        ScreenshotCategory(name: "Photos", color: "#45B7D1", icon: "camera.fill", isDefault: true, sortOrder: 3),
+        ScreenshotCategory(name: "Gaming", color: "#9B59B6", icon: "bolt.fill", isDefault: true, sortOrder: 4),
+        ScreenshotCategory(name: "Productivity", color: "#2ECC71", icon: "calendar", isDefault: true, sortOrder: 5),
         ScreenshotCategory(name: "Documents", color: "#96CEB4", icon: "doc.text", isDefault: true, sortOrder: 6),
         ScreenshotCategory(name: "Shopping", color: "#DDA0DD", icon: "cart", isDefault: true, sortOrder: 7),
         ScreenshotCategory(name: "News", color: "#98D8C8", icon: "newspaper", isDefault: true, sortOrder: 8),

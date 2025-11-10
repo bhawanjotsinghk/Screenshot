@@ -139,65 +139,79 @@ struct ScreenshotDetailView: View {
                         
                         // Tags
                         DetailSection(title: "Tags") {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 12) {
                                 if screenshot.tags.isEmpty {
-                                    Text("No tags")
+                                    Text("No tags added yet")
                                         .foregroundColor(.secondary)
+                                        .font(.subheadline)
                                 } else {
-                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 8) {
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
                                         ForEach(screenshot.tags, id: \.self) { tag in
-                                            HStack {
+                                            HStack(spacing: 6) {
                                                 Text(tag)
-                                                    .font(.caption)
+                                                    .font(.system(size: 14, weight: .medium))
                                                 
                                                 Button(action: {
                                                     screenshot.removeTag(tag)
                                                     screenshotManager.updateScreenshot(screenshot)
                                                 }) {
-                                                    Image(systemName: "xmark")
-                                                        .font(.caption2)
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.system(size: 14))
+                                                        .foregroundColor(.secondary)
                                                 }
                                             }
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color(.systemGray5))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color(.systemBlue).opacity(0.1))
+                                            .foregroundColor(.blue)
                                             .clipShape(Capsule())
                                         }
                                     }
                                 }
                                 
                                 // Add new tag
-                                HStack {
-                                    TextField("Add tag", text: $newTag)
+                                HStack(spacing: 8) {
+                                    TextField("Add a tag...", text: $newTag)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    
-                                    Button("Add") {
-                                        if !newTag.isEmpty {
-                                            screenshot.addTag(newTag)
-                                            screenshotManager.updateScreenshot(screenshot)
-                                            newTag = ""
+                                        .onSubmit {
+                                            addTag()
                                         }
+                                    
+                                    Button(action: {
+                                        addTag()
+                                    }) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title3)
+                                            .foregroundColor(.blue)
                                     }
-                                    .disabled(newTag.isEmpty)
+                                    .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
                                 }
                             }
                         }
                         
                         // Notes
                         DetailSection(title: "Notes") {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 12) {
                                 if let notes = screenshot.notes, !notes.isEmpty {
                                     Text(notes)
                                         .font(.body)
+                                        .padding(.vertical, 8)
                                 } else {
-                                    Text("No notes")
+                                    Text("No notes added yet")
                                         .foregroundColor(.secondary)
+                                        .font(.subheadline)
                                 }
                                 
-                                Button("Add Notes") {
+                                Button(action: {
                                     showingEditSheet = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: screenshot.notes?.isEmpty == false ? "pencil" : "plus.circle")
+                                        Text(screenshot.notes?.isEmpty == false ? "Edit Notes" : "Add Notes")
                                 }
-                                .font(.caption)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.blue)
+                                }
                             }
                         }
                     }
@@ -234,7 +248,7 @@ struct ScreenshotDetailView: View {
             }
             .fullScreenCover(isPresented: $showingImage) {
                 if let image = screenshot.image {
-                    ImageViewerView(image: image, screenshot: screenshot)
+                    ImageViewerView(image: image, screenshot: screenshot, screenshotManager: screenshotManager)
                 } else {
                     Color.black.ignoresSafeArea()
                 }
@@ -268,6 +282,15 @@ struct ScreenshotDetailView: View {
         
         // Schedule new reminder
         NotificationService.shared.scheduleScreenshotReminder(for: screenshot, after: reminderHours)
+    }
+    
+    private func addTag() {
+        let trimmedTag = newTag.trimmingCharacters(in: .whitespaces)
+        if !trimmedTag.isEmpty {
+            screenshot.addTag(trimmedTag)
+            screenshotManager.updateScreenshot(screenshot)
+            newTag = ""
+        }
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -382,11 +405,11 @@ struct EditScreenshotView: View {
         NavigationView {
             Form {
                 Section("Notes") {
-                    TextField("Add notes about this screenshot", text: $notes, axis: .vertical)
-                        .lineLimit(3...10)
+                    TextEditor(text: $notes)
+                        .frame(minHeight: 200)
                 }
             }
-            .navigationTitle("Edit Screenshot")
+            .navigationTitle("Edit Notes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -397,11 +420,192 @@ struct EditScreenshotView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        screenshot.notes = notes.isEmpty ? nil : notes
+                        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        screenshot.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
                         screenshotManager.updateScreenshot(screenshot)
                         dismiss()
                     }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Tags Editor View
+struct TagsEditorView: View {
+    let screenshot: Screenshot
+    @ObservedObject var screenshotManager: ScreenshotManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var newTag = ""
+    @FocusState private var isTextFieldFocused: Bool
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // Current Tags
+                if screenshot.tags.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tag")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
+                        Text("No tags yet")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Add tags to organize and find this screenshot easily")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 12)], spacing: 12) {
+                            ForEach(screenshot.tags, id: \.self) { tag in
+                                HStack(spacing: 8) {
+                                    Text(tag)
+                                        .font(.system(size: 15, weight: .medium))
+                                    
+                                    Button(action: {
+                                        screenshot.removeTag(tag)
+                                        screenshotManager.updateScreenshot(screenshot)
+                                    }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemBlue).opacity(0.1))
+                                .foregroundColor(.blue)
+                                .clipShape(Capsule())
+                            }
+                        }
+                        .padding()
+                    }
+                }
+                
+                // Add Tag Section
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        TextField("Enter a tag...", text: $newTag)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .focused($isTextFieldFocused)
+                            .onSubmit {
+                                addTag()
+                            }
+                        
+                        Button(action: {
+                            addTag()
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue)
+                        }
+                        .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .padding(.horizontal)
+                    
+                    Text("Press Enter or tap + to add a tag")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.bottom)
+            }
+            .navigationTitle("Tags")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                isTextFieldFocused = true
+            }
+        }
+    }
+    
+    private func addTag() {
+        let trimmedTag = newTag.trimmingCharacters(in: .whitespaces)
+        if !trimmedTag.isEmpty && !screenshot.tags.contains(trimmedTag) {
+            screenshot.addTag(trimmedTag)
+            screenshotManager.updateScreenshot(screenshot)
+            newTag = ""
+        }
+    }
+}
+
+// MARK: - Notes Editor View
+struct NotesEditorView: View {
+    let screenshot: Screenshot
+    @ObservedObject var screenshotManager: ScreenshotManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var notes: String
+    @FocusState private var isTextFieldFocused: Bool
+    
+    init(screenshot: Screenshot, screenshotManager: ScreenshotManager) {
+        self.screenshot = screenshot
+        self.screenshotManager = screenshotManager
+        self._notes = State(initialValue: screenshot.notes ?? "")
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                TextEditor(text: $notes)
+                    .padding()
+                    .focused($isTextFieldFocused)
+                    .overlay(
+                        Group {
+                            if notes.isEmpty {
+                                VStack {
+                                    HStack {
+                                        Text("Add notes about this screenshot...")
+                                            .foregroundColor(.secondary)
+                                            .padding(.top, 8)
+                                            .padding(.leading, 5)
+                                        Spacer()
+                                    }
+                                    Spacer()
+                                }
+                            }
+                        }
+                    )
+                
+                if !notes.isEmpty {
+                    HStack {
+                        Spacer()
+                        Text("\(notes.count) characters")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.trailing)
+                            .padding(.bottom, 8)
+                    }
+                }
+            }
+            .navigationTitle("Notes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        screenshot.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+                        screenshotManager.updateScreenshot(screenshot)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                isTextFieldFocused = true
             }
         }
     }

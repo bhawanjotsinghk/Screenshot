@@ -312,4 +312,103 @@ class ScreenshotManager: ObservableObject {
             await reanalyzeScreenshot(screenshot)
         }
     }
+    
+    // MARK: - AI Features Implementation
+    
+    /// AI Categorization: Automatically categorize screenshots using AI analysis
+    func enableAICategorization() async {
+        isProcessing = true
+        
+        defer {
+            isProcessing = false
+        }
+        
+        // Analyze all uncategorized screenshots
+        let uncategorizedScreenshots = screenshots.filter { $0.category == nil }
+        
+        for screenshot in uncategorizedScreenshots {
+            if let image = UIImage(data: screenshot.imageData) {
+                let analysis = await aiAnalyzer.analyzeImage(image)
+                
+                // Find or create category based on AI suggestion
+                if let suggestedCategory = analysis.suggestedCategory {
+                    let category = findOrCreateCategory(name: suggestedCategory)
+                    screenshot.category = category
+                    screenshot.confidence = analysis.confidence
+                    screenshot.aiDescription = analysis.description
+                    
+                    updateScreenshot(screenshot)
+                }
+            }
+        }
+    }
+    
+    /// Auto-Sort: Automatically organize new screenshots when they're added
+    func autoSortNewScreenshots(_ newScreenshots: [Screenshot]) async {
+        for screenshot in newScreenshots {
+            if let image = UIImage(data: screenshot.imageData) {
+                let analysis = await aiAnalyzer.analyzeImage(image)
+                
+                if let suggestedCategory = analysis.suggestedCategory {
+                    let category = findOrCreateCategory(name: suggestedCategory)
+                    screenshot.category = category
+                    screenshot.confidence = analysis.confidence
+                    screenshot.aiDescription = analysis.description
+                    
+                    updateScreenshot(screenshot)
+                }
+            }
+        }
+    }
+    
+    /// Auto-Delete Old Screenshots: Remove old screenshots to save space
+    func autoDeleteOldScreenshots(olderThanDays: Int = 30) async {
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -olderThanDays, to: Date()) ?? Date()
+        
+        let oldScreenshots = screenshots.filter { screenshot in
+            screenshot.dateCreated < cutoffDate
+        }
+        
+        for screenshot in oldScreenshots {
+            deleteScreenshot(screenshot)
+        }
+    }
+    
+    /// Find existing category or create new one
+    private func findOrCreateCategory(name: String) -> ScreenshotCategory {
+        // First try to find existing category
+        if let existingCategory = categories.first(where: { $0.name.lowercased() == name.lowercased() }) {
+            return existingCategory
+        }
+        
+        // Create new category
+        let newCategory = ScreenshotCategory(
+            name: name,
+            color: getRandomCategoryColor(),
+            icon: getRandomCategoryIcon()
+        )
+        
+        modelContext.insert(newCategory)
+        categories.append(newCategory)
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to save new category: \(error)")
+        }
+        
+        return newCategory
+    }
+    
+    /// Get random color for new category
+    private func getRandomCategoryColor() -> String {
+        let colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F"]
+        return colors.randomElement() ?? "#4ECDC4"
+    }
+    
+    /// Get random icon for new category
+    private func getRandomCategoryIcon() -> String {
+        let icons = ["folder", "star", "heart", "bookmark", "tag", "flag", "pin", "circle"]
+        return icons.randomElement() ?? "folder"
+    }
 }

@@ -52,7 +52,7 @@ class TestDataGenerator {
             ),
             TestScreenshotData(
                 fileName: "game_screenshot.png",
-                categoryName: "Games",
+                categoryName: "Gaming",
                 description: "High score in mobile game",
                 fileSize: Int64(1024 * 1024), // 1MB
                 confidence: 0.78
@@ -102,56 +102,26 @@ class TestDataGenerator {
         do {
             try modelContext.save()
             print("✅ Generated \(testScreenshots.count) test screenshots and saved to database")
+            // Post notification to refresh UI
+            NotificationCenter.default.post(name: NSNotification.Name("ScreenshotsUpdated"), object: nil)
         } catch {
             print("❌ Failed to save test data: \(error)")
         }
     }
     
     private func createTestCategories(modelContext: ModelContext) {
-        let categories = [
-            ("Social Media", "#FF6B6B", "person.2"),
-            ("Messages", "#4ECDC4", "message"),
-            ("Photos", "#45B7D1", "camera"),
-            ("Documents", "#96CEB4", "doc.text"),
-            ("Games", "#FFEAA7", "gamecontroller"),
-            ("Shopping", "#DDA0DD", "cart"),
-            ("News", "#98D8C8", "newspaper")
-        ]
-        
-        for (name, color, icon) in categories {
-            // Check if category already exists
-            let request = FetchDescriptor<ScreenshotCategory>(
-                predicate: #Predicate { $0.name == name }
-            )
-            
-            do {
-                let existingCategories = try modelContext.fetch(request)
-                if existingCategories.isEmpty {
-                    let category = ScreenshotCategory(
-                        name: name,
-                        color: color,
-                        icon: icon
-                    )
-                    modelContext.insert(category)
-                }
-            } catch {
-                print("Error checking for existing category: \(error)")
-            }
-        }
-        
-        do {
-            try modelContext.save()
-            print("✅ Created test categories")
-        } catch {
-            print("Error saving categories: \(error)")
-        }
+        // Categories are already created by ScreenshotManager, so we don't need to create them here
+        // Just ensure they exist by checking
+        print("✅ Using existing categories from ScreenshotManager")
     }
     
     private func createTestScreenshot(testData: TestScreenshotData, modelContext: ModelContext) {
         print("📸 Creating test screenshot: \(testData.fileName)")
         
-        // Create a simple test image
-        let testImage = createTestImage(size: CGSize(width: 300, height: 400), text: testData.fileName)
+        // Create a realistic screenshot-sized image (iPhone-like dimensions)
+        let width = 390  // iPhone 14 Pro width
+        let height = 844  // iPhone 14 Pro height
+        let testImage = createTestImage(size: CGSize(width: width, height: height), text: testData.fileName)
         
         guard let imageData = testImage.jpegData(compressionQuality: 0.8) else {
             print("❌ Failed to create image data for \(testData.fileName)")
@@ -169,9 +139,9 @@ class TestDataGenerator {
             let screenshot = Screenshot(
                 imageData: imageData,
                 fileName: testData.fileName,
-                fileSize: testData.fileSize,
-                width: 300,
-                height: 400,
+                fileSize: Int64(imageData.count), // Use actual image data size
+                width: width,
+                height: height,
                 dateCreated: Date().addingTimeInterval(-Double.random(in: 0...86400 * 7)), // Random date within last week
                 aiDescription: testData.description,
                 confidence: testData.confidence
@@ -200,12 +170,28 @@ class TestDataGenerator {
         let renderer = UIGraphicsImageRenderer(size: size)
         
         return renderer.image { context in
-            // Create a gradient background
-            let colors = [
-                UIColor.systemBlue.cgColor,
-                UIColor.systemPurple.cgColor
-            ]
+            // Create a more realistic screenshot-like background
+            let gradientColors: [UIColor]
+            switch text.lowercased() {
+            case let t where t.contains("social") || t.contains("media"):
+                gradientColors = [UIColor(red: 1.0, green: 0.4, blue: 0.6, alpha: 1.0), UIColor(red: 1.0, green: 0.2, blue: 0.5, alpha: 1.0)]
+            case let t where t.contains("message"):
+                gradientColors = [UIColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0), UIColor(red: 0.1, green: 0.4, blue: 0.8, alpha: 1.0)]
+            case let t where t.contains("photo"):
+                gradientColors = [UIColor(red: 0.3, green: 0.7, blue: 0.9, alpha: 1.0), UIColor(red: 0.1, green: 0.5, blue: 0.8, alpha: 1.0)]
+            case let t where t.contains("game"):
+                gradientColors = [UIColor(red: 0.6, green: 0.3, blue: 0.7, alpha: 1.0), UIColor(red: 0.4, green: 0.2, blue: 0.6, alpha: 1.0)]
+            case let t where t.contains("document"):
+                gradientColors = [UIColor(red: 0.6, green: 0.8, blue: 0.7, alpha: 1.0), UIColor(red: 0.4, green: 0.7, blue: 0.6, alpha: 1.0)]
+            case let t where t.contains("shopping"):
+                gradientColors = [UIColor(red: 0.9, green: 0.6, blue: 0.9, alpha: 1.0), UIColor(red: 0.8, green: 0.5, blue: 0.8, alpha: 1.0)]
+            case let t where t.contains("news"):
+                gradientColors = [UIColor(red: 0.6, green: 0.85, blue: 0.8, alpha: 1.0), UIColor(red: 0.4, green: 0.75, blue: 0.7, alpha: 1.0)]
+            default:
+                gradientColors = [UIColor.systemBlue, UIColor.systemPurple]
+            }
             
+            let colors = gradientColors.map { $0.cgColor }
             let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
             
             context.cgContext.drawLinearGradient(
@@ -215,31 +201,41 @@ class TestDataGenerator {
                 options: []
             )
             
-            // Add some random shapes
-            let shapeCount = Int.random(in: 3...8)
+            // Add some decorative elements to make it look more like a screenshot
+            let shapeCount = Int.random(in: 5...12)
             for _ in 0..<shapeCount {
                 let rect = CGRect(
-                    x: CGFloat.random(in: 0...size.width - 50),
-                    y: CGFloat.random(in: 0...size.height - 50),
-                    width: CGFloat.random(in: 20...50),
-                    height: CGFloat.random(in: 20...50)
+                    x: CGFloat.random(in: 0...size.width - 60),
+                    y: CGFloat.random(in: 0...size.height - 60),
+                    width: CGFloat.random(in: 30...60),
+                    height: CGFloat.random(in: 30...60)
                 )
                 
-                let color = UIColor.white.withAlphaComponent(0.3)
+                let color = UIColor.white.withAlphaComponent(CGFloat.random(in: 0.2...0.5))
                 context.cgContext.setFillColor(color.cgColor)
+                
+                if Bool.random() {
                 context.cgContext.fillEllipse(in: rect)
+                } else {
+                    context.cgContext.fill(rect)
+                }
             }
             
-            // Add text
+            // Add a white rectangle at the top to simulate a status bar
+            let statusBarRect = CGRect(x: 0, y: 0, width: size.width, height: 30)
+            UIColor.white.withAlphaComponent(0.3).setFill()
+            context.cgContext.fill(statusBarRect)
+            
+            // Add text at the bottom
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.boldSystemFont(ofSize: 16),
+                .font: UIFont.boldSystemFont(ofSize: 18),
                 .foregroundColor: UIColor.white,
-                .strokeColor: UIColor.black,
-                .strokeWidth: -2
+                .strokeColor: UIColor.black.withAlphaComponent(0.5),
+                .strokeWidth: -3
             ]
             
-            let textRect = CGRect(x: 10, y: size.height - 40, width: size.width - 20, height: 30)
-            text.draw(in: textRect, withAttributes: attributes)
+            let textRect = CGRect(x: 15, y: size.height - 50, width: size.width - 30, height: 35)
+            text.replacingOccurrences(of: "_", with: " ").capitalized.draw(in: textRect, withAttributes: attributes)
         }
     }
     
@@ -263,6 +259,8 @@ class TestDataGenerator {
             
             try modelContext.save()
             print("✅ Cleared all test data")
+            // Post notification to refresh UI
+            NotificationCenter.default.post(name: NSNotification.Name("ScreenshotsUpdated"), object: nil)
         } catch {
             print("Error clearing test data: \(error)")
         }
